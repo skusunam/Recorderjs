@@ -43,7 +43,7 @@ var Recorder = exports.Recorder = (function () {
 
         this.config = {
             bufferLen: 4096,
-            numChannels: 2,
+            numChannels: 1,
             mimeType: 'audio/wav'
         };
         this.recording = false;
@@ -74,6 +74,7 @@ var Recorder = exports.Recorder = (function () {
 
         var self = {};
         this.worker = new _inlineWorker2.default(function () {
+
             var recLength = 0,
                 recBuffers = [],
                 sampleRate = undefined,
@@ -106,10 +107,31 @@ var Recorder = exports.Recorder = (function () {
             }
 
             function record(inputBuffer) {
-                for (var channel = 0; channel < numChannels; channel++) {
-                    recBuffers[channel].push(inputBuffer[channel]);
-                }
-                recLength += inputBuffer[0].length;
+              /* downsampling */
+              var ratio = sampleRate / 16000,
+                  newLength = Math.round(inputBuffer[0].length / ratio),
+                  result = new Float32Array(newLength),
+                  offsetResult = 0,
+                  offsetBuffer = 0,
+                  next,
+                  accumulator,
+                  i,
+                  count;
+
+              while (offsetResult < result.length) {
+                  next = Math.round((offsetResult + 1) * ratio);
+                  accumulator = 0;
+                  count = 0;
+                  for (i = offsetBuffer; i < next && i < inputBuffer[0].length; i += 1) {
+                      accumulator += inputBuffer[0][i];
+                      count += 1;
+                  }
+                  result[offsetResult] = Math.min(1, accumulator / count);
+                  offsetResult += 1;
+                  offsetBuffer = next;
+              }
+              recBuffers[0].push(result);
+              recLength += result.length;
             }
 
             function exportWAV(type) {
@@ -204,13 +226,13 @@ var Recorder = exports.Recorder = (function () {
                 /* sample format (raw) */
                 view.setUint16(20, 1, true);
                 /* channel count */
-                view.setUint16(22, numChannels, true);
+                view.setUint16(22, 1, true);
                 /* sample rate */
-                view.setUint32(24, sampleRate, true);
+                view.setUint32(24, 16000, true);
                 /* byte rate (sample rate * block align) */
-                view.setUint32(28, sampleRate * 4, true);
+                view.setUint32(28, 16000 * 2, true);
                 /* block align (channel count * bytes per sample) */
-                view.setUint16(32, numChannels * 2, true);
+                view.setUint16(32, 2, true);
                 /* bits per sample */
                 view.setUint16(34, 16, true);
                 /* data chunk identifier */
